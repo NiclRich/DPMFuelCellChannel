@@ -78,31 +78,32 @@ Tin = 70 + 273              # Inlet Air Temperature (K)
 Tdin = 70 + 273             # Droplet temperature (K)
 Tdomain = 70 + 273          # Temperature of Domain (K)
 Pin = 120000                # Inlet Pressure (Pa)
-T = T * np.ones(Cz.size)    # Nodal temperature of domain
+T = Tdomain * np.ones(Cz.size)    # Nodal temperature of domain
 # define anononymous function, which is later used several times
 # Saturated vapour pressure equation (Pa), TODO: make clear what does it means
 Psat = lambda T: np.exp(34.494 - (4924.99 / ((T-273) + 237.1))) / (((T-273) + 105) ** 1.57)
 Ps = Psat(T)                # Initialising Psat in domain
 Pv = RHd * Ps               # Initialising vapour pressure in domain
-Pvin = Rhi * Psat(Tin)      # Calculating water vapor pressure in inlet
+Pvin = RHi * Psat(Tin)      # Calculating water vapor pressure in inlet
 CWin = Pvin / (8.314 * Tin) # Calculating water concention inlet (mol / m3)
 Cw = Pv / (8.314 * T)       # Determine water concentration in domain (mol / m3)
-xw = pv / Pin               # Water mol fraction
+xw = Pv / Pin               # Water mol fraction
 # TODO Check the size of the expression, it's confusing if it is a scalar or an array
-u_sto = (sto / xo2) * ((current_density * W * L) / (4 * 96487)) * ((8.314 * Tin) / (Pin - Pvin)) * (1/(H*W)) # stochiometric air velocity (m/s)
+u_sto = (Sto / xo2) * ((current_density * W * L) / (4 * 96487)) * ((8.314 * Tin) / (Pin - Pvin)) * (1/(H*W)) # stochiometric air velocity (m/s)
 Oin = ((xo2 * (Pin - Pvin)) / (8.314 * Tin)) # oxygen concentration at inlet
 N2 = (0.79 / 0.21) * Oin    # Nitrogen concentration
 rhow = 1e3                  # density of water (kg / m3)
 rhoa = 1                    # density of air (kg/m3)
 sigma = 0.072               # surface tension of water
 w_c = np.zeros(Cz.size)     # water in channel segments
-Sw_c = wc                   # Saturation of water in channel segments
+Sw_c = w_c                   # Saturation of water in channel segments
 
 
 ## Two phase Droplet Injection Parameters
 # Number of Injection points (i.e. number of discrete water clusters in GDL
 # TODO: Insert commented out lines
 npores = np.round(7*(W*L*1000000)) # set number of injection pores (7 clusters / mm2)
+npores = int(npores) # Python expects in integer
 
 # ========== Specify the pore size and location ========== 
 Rpmax = (50e-6)/2           # maximum pore radius
@@ -119,7 +120,7 @@ zp = np.random.rand(npores) * (L / 1.0005) # z coord of pores (random along chan
 
 
 # ========== Preallocate of droplet data ========== 
-poresize = np.ones(npores) * Rpmax      # Assign Rpmax to all the pores
+poresize = np.ones(npores) * Rpmax # Assign Rpmax to all the pores
 Vd = np.zeros(poresize.size)            # volume of droplets
 Rc = poresize                           # contact radius
 Rd = poresize                           # radius
@@ -176,8 +177,9 @@ flow_l = np.ones(poresize.size) * volume_flow_water_pore    # m3/ s* pore
 #========== Preallocate Droplet storage Array ========== 
 # with original pore values saved in Dorig TODO: Make the storage model in Matlab clear
 Dorig = np.asarray([Vd, flow_l, xp, yp, zp, E, Rd, Rc, Rp, h, b, Lc, Ld, As, Ac, Lad, A_surf, A_sl, v_evap, u_d, u_i, u_ac, Fdrag, Fadhesion, theta_app, hlim, Td])
-D = Dorig # save pore injection conditions in Dorig
-# WTF is going on here?
+D = Dorig.transpose() # save pore injection conditions in Dorig
+# D is the main 70x27 array. Each Line is one droplet (so 70 lines) and this keep track of the changes
+# while Dorig uses the start values
 
 # Fuel Cell Dimensions (not used)
 GDLy = 200e-6                           # Thickness of GDL (unused)
@@ -221,16 +223,25 @@ uin = 10                                # air velocity based on set value (m/s)
 # uin = (volume_flow_water / (H*W) * dt # i.e. injection of droplets must cause air flow
 
 u_a = np.ones(Cz.size) * uin            # assign velocity to channel points (unused)
-V_air_in = u_in * (H * W)               # volume flow of air in (unused)
+V_air_in = uin * (H * W)               # volume flow of air in (unused)
 V_air = u_a * ( H * W)                  # volume flow of air in each segment (unused)
 
+# Find where the location is less than the channel points
+Location_Evap = D[:, 4][:, np.newaxis] > Cz  # [:, np.newaxis] reshapes Cz to align with D[:, 5] for broadcasting
 
-# This is a possible bug
-Location_Evap = D[:, 4] > Cz            # find where the location is less than the channel points. This is an array of booleans and not 0-1 like in matlab
-i_evap = np.argmin(Location_Evap != 1, axis=1) # find the first true value in each row (i_evap) 
+# Find the first occurrence of 1 (True) in each row
+i_evap = np.argmin(Location_Evap, axis=1)
 
-Cbulk = Cw[i_evap].T                     # converting row to column array for droplet evaportaion assesment
-Tbulk = T[i_evap].T                     # same ?
+# Extract corresponding values from Cw and T, converting them to column arrays
+Cbulk = Cw[i_evap]
+Tbulk = T[i_evap]
+# # This is a possible bug since Cz has a different shape than D
+# # After testing: Yes, it is
+# Location_Evap = D[:, 4] > Cz            # find where the location is less than the channel points. This is an array of booleans and not 0-1 like in matlab
+# i_evap = np.argmin(Location_Evap != 1, axis=1) # find the first true value in each row (i_evap) 
+
+# Cbulk = Cw[i_evap].T                     # converting row to column array for droplet evaportaion assesment
+# Tbulk = T[i_evap].T                     # same ?
 # the following line is definitely a BUG with D
 Nu = 2 + 0.6 * (Cpg[0] * mug[0] / kg[0])**(1/3) * ((2 * D[:, 6] * (u_a[0] -D[:,19])* rhoa) / (mug[0]))**0.5     # nusselt number
 h_conv = Nu * kg[0] / (2 * D[:, 7]) # convective heat transfer coeffficient
@@ -247,10 +258,10 @@ c = - ( 3* Ca * H / (1 - np.cos(theta_wall))) - (2 * H)
 d = H**2
 
 # Newton iteration to solve
-f  = lambda h: a * (h**3) + b(h**2) + c * H + d
+f  = lambda h: a * (h**3) + b * (h**2) + c * h + d
 df = lambda h: (3 * a * h**2) + 2 * b * h + c
 
-h = np.ones(uin.size) * 0.0 # really?
+h = np.ones(uin) * 0.0 # really?
 holde = h
 h1 = h
 hnew = holde + 10000
@@ -259,6 +270,7 @@ f1_error = 1e-9
 iter_i = 0
 w = 0.7
 
+# TODO In the Newton Iteration there is a bug, check it
 while np.sqrt(np.abs(np.transpose(holde-hnew) @ (holde - hnew))) > 1e-12: # solving the height equation (NEwton Method)
     hnew = h1 - np.linalg.solve(w * df(h1), f(h1))
     holde = h1
