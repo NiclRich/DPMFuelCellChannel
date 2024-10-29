@@ -1,4 +1,4 @@
-%% ============ Mechanistic Channel Discrete Particle Model (MCDPM)==================
+% ============ Mechanistic Channel Discrete Particle Model (MCDPM)==================
 
 %------------------------------------------------------------------------------------
 
